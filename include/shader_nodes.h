@@ -11,6 +11,31 @@ namespace ShaderGraph {
 // Forward declarations
 class ShaderNode;
 
+// Custom node styles with proper padding
+inline std::shared_ptr<ImFlow::NodeStyle> InputNodeStyle() {
+    auto style = std::make_shared<ImFlow::NodeStyle>(IM_COL32(90,191,93,255), ImColor(233,241,244,255), 6.5f);
+    style->padding = ImVec4(20.f, 8.f, 20.f, 8.f);
+    return style;
+}
+
+inline std::shared_ptr<ImFlow::NodeStyle> MathNodeStyle() {
+    auto style = std::make_shared<ImFlow::NodeStyle>(IM_COL32(71,142,173,255), ImColor(233,241,244,255), 6.5f);
+    style->padding = ImVec4(20.f, 8.f, 20.f, 8.f);
+    return style;
+}
+
+inline std::shared_ptr<ImFlow::NodeStyle> VectorNodeStyle() {
+    auto style = std::make_shared<ImFlow::NodeStyle>(IM_COL32(191,134,90,255), ImColor(233,241,244,255), 6.5f);
+    style->padding = ImVec4(20.f, 8.f, 20.f, 8.f);
+    return style;
+}
+
+inline std::shared_ptr<ImFlow::NodeStyle> OutputNodeStyle() {
+    auto style = std::make_shared<ImFlow::NodeStyle>(IM_COL32(191,90,90,255), ImColor(233,241,244,255), 6.5f);
+    style->padding = ImVec4(20.f, 8.f, 20.f, 8.f);
+    return style;
+}
+
 // Pin styles for different data types
 inline std::shared_ptr<ImFlow::PinStyle> FloatPinStyle() {
     return ImFlow::PinStyle::cyan();
@@ -45,7 +70,7 @@ class FloatNode : public ImFlow::BaseNode {
 public:
     FloatNode() {
         setTitle("Float");
-        setStyle(ImFlow::NodeStyle::cyan());
+        setStyle(MathNodeStyle());
         addOUT<ShaderCode>("Value", FloatPinStyle())->behaviour([this]() {
             std::ostringstream ss;
             ss << std::fixed << std::setprecision(3) << m_value;
@@ -69,7 +94,7 @@ class ColorNode : public ImFlow::BaseNode {
 public:
     ColorNode() {
         setTitle("Color");
-        setStyle(ImFlow::NodeStyle::brown());
+        setStyle(VectorNodeStyle());
         addOUT<ShaderCode>("RGB", Vec3PinStyle())->behaviour([this]() {
             std::ostringstream ss;
             ss << std::fixed << std::setprecision(3);
@@ -94,7 +119,7 @@ class TimeNode : public ImFlow::BaseNode {
 public:
     TimeNode() {
         setTitle("Time");
-        setStyle(ImFlow::NodeStyle::green());
+        setStyle(InputNodeStyle());
         addOUT<ShaderCode>("Time", FloatPinStyle())->behaviour([this]() {
             return ShaderCode("time");
         });
@@ -112,7 +137,7 @@ class UVNode : public ImFlow::BaseNode {
 public:
     UVNode() {
         setTitle("Position");
-        setStyle(ImFlow::NodeStyle::green());
+        setStyle(InputNodeStyle());
         addOUT<ShaderCode>("XYZ", Vec3PinStyle())->behaviour([this]() {
             return ShaderCode("FragPos");
         });
@@ -139,7 +164,7 @@ class NormalNode : public ImFlow::BaseNode {
 public:
     NormalNode() {
         setTitle("Normal");
-        setStyle(ImFlow::NodeStyle::green());
+        setStyle(InputNodeStyle());
         addOUT<ShaderCode>("Normal", Vec3PinStyle())->behaviour([this]() {
             return ShaderCode("normalize(Normal)");
         });
@@ -157,7 +182,7 @@ class AddNode : public ImFlow::BaseNode {
 public:
     AddNode() {
         setTitle("Add");
-        setStyle(ImFlow::NodeStyle::cyan());
+        setStyle(MathNodeStyle());
         addIN<ShaderCode>("A", ShaderCode("0.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addIN<ShaderCode>("B", ShaderCode("0.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addOUT<ShaderCode>("Result", FloatPinStyle())->behaviour([this]() {
@@ -179,7 +204,7 @@ class MultiplyNode : public ImFlow::BaseNode {
 public:
     MultiplyNode() {
         setTitle("Multiply");
-        setStyle(ImFlow::NodeStyle::cyan());
+        setStyle(MathNodeStyle());
         addIN<ShaderCode>("A", ShaderCode("1.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addIN<ShaderCode>("B", ShaderCode("1.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addOUT<ShaderCode>("Result", FloatPinStyle())->behaviour([this]() {
@@ -201,7 +226,7 @@ class SubtractNode : public ImFlow::BaseNode {
 public:
     SubtractNode() {
         setTitle("Subtract");
-        setStyle(ImFlow::NodeStyle::cyan());
+        setStyle(MathNodeStyle());
         addIN<ShaderCode>("A", ShaderCode("0.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addIN<ShaderCode>("B", ShaderCode("0.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addOUT<ShaderCode>("Result", FloatPinStyle())->behaviour([this]() {
@@ -223,7 +248,7 @@ class DivideNode : public ImFlow::BaseNode {
 public:
     DivideNode() {
         setTitle("Divide");
-        setStyle(ImFlow::NodeStyle::cyan());
+        setStyle(MathNodeStyle());
         addIN<ShaderCode>("A", ShaderCode("1.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addIN<ShaderCode>("B", ShaderCode("1.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addOUT<ShaderCode>("Result", FloatPinStyle())->behaviour([this]() {
@@ -245,7 +270,7 @@ class SinNode : public ImFlow::BaseNode {
 public:
     SinNode() {
         setTitle("Sin");
-        setStyle(ImFlow::NodeStyle::cyan());
+        setStyle(MathNodeStyle());
         addIN<ShaderCode>("X", ShaderCode("0.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addOUT<ShaderCode>("Result", FloatPinStyle())->behaviour([this]() {
             auto x = getInVal<ShaderCode>("X");
@@ -265,7 +290,7 @@ class CosNode : public ImFlow::BaseNode {
 public:
     CosNode() {
         setTitle("Cos");
-        setStyle(ImFlow::NodeStyle::cyan());
+        setStyle(MathNodeStyle());
         addIN<ShaderCode>("X", ShaderCode("0.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addOUT<ShaderCode>("Result", FloatPinStyle())->behaviour([this]() {
             auto x = getInVal<ShaderCode>("X");
@@ -285,7 +310,7 @@ class AbsNode : public ImFlow::BaseNode {
 public:
     AbsNode() {
         setTitle("Abs");
-        setStyle(ImFlow::NodeStyle::cyan());
+        setStyle(MathNodeStyle());
         addIN<ShaderCode>("X", ShaderCode("0.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addOUT<ShaderCode>("Result", FloatPinStyle())->behaviour([this]() {
             auto x = getInVal<ShaderCode>("X");
@@ -305,7 +330,7 @@ class MixNode : public ImFlow::BaseNode {
 public:
     MixNode() {
         setTitle("Mix");
-        setStyle(ImFlow::NodeStyle::cyan());
+        setStyle(MathNodeStyle());
         addIN<ShaderCode>("A", ShaderCode("0.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addIN<ShaderCode>("B", ShaderCode("1.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addIN<ShaderCode>("T", ShaderCode("0.5"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
@@ -329,7 +354,7 @@ class ClampNode : public ImFlow::BaseNode {
 public:
     ClampNode() {
         setTitle("Clamp");
-        setStyle(ImFlow::NodeStyle::cyan());
+        setStyle(MathNodeStyle());
         addIN<ShaderCode>("X", ShaderCode("0.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addOUT<ShaderCode>("Result", FloatPinStyle())->behaviour([this]() {
             auto x = getInVal<ShaderCode>("X");
@@ -359,7 +384,7 @@ class MakeVec3Node : public ImFlow::BaseNode {
 public:
     MakeVec3Node() {
         setTitle("Make Vec3");
-        setStyle(ImFlow::NodeStyle::brown());
+        setStyle(VectorNodeStyle());
         addIN<ShaderCode>("X", ShaderCode("0.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addIN<ShaderCode>("Y", ShaderCode("0.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addIN<ShaderCode>("Z", ShaderCode("0.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
@@ -383,7 +408,7 @@ class SplitVec3Node : public ImFlow::BaseNode {
 public:
     SplitVec3Node() {
         setTitle("Split Vec3");
-        setStyle(ImFlow::NodeStyle::brown());
+        setStyle(VectorNodeStyle());
         addIN<ShaderCode>("Vec3", ShaderCode("vec3(0.0)"), ImFlow::ConnectionFilter::SameType(), Vec3PinStyle());
         addOUT<ShaderCode>("X", FloatPinStyle())->behaviour([this]() {
             auto v = getInVal<ShaderCode>("Vec3");
@@ -411,7 +436,7 @@ class FresnelNode : public ImFlow::BaseNode {
 public:
     FresnelNode() {
         setTitle("Fresnel");
-        setStyle(ImFlow::NodeStyle::green());
+        setStyle(InputNodeStyle());
         addIN<ShaderCode>("Power", ShaderCode("2.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
         addOUT<ShaderCode>("Factor", FloatPinStyle())->behaviour([this]() {
             auto power = getInVal<ShaderCode>("Power");
@@ -431,7 +456,7 @@ class OutputNode : public ImFlow::BaseNode {
 public:
     OutputNode() {
         setTitle("Shader Output");
-        setStyle(ImFlow::NodeStyle::red());
+        setStyle(OutputNodeStyle());
         addIN<ShaderCode>("Color", ShaderCode("vec3(1.0, 0.5, 0.2)"), ImFlow::ConnectionFilter::SameType(), Vec3PinStyle());
         addIN<ShaderCode>("Alpha", ShaderCode("1.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
     }
