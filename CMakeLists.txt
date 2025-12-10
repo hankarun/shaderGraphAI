@@ -44,6 +44,8 @@ add_library(imgui STATIC
     ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
 )
 
+target_compile_definitions(imgui PUBLIC IMGUI_DEFINE_MATH_OPERATORS)
+
 target_include_directories(imgui PUBLIC
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
@@ -56,12 +58,19 @@ find_package(OpenGL REQUIRED)
 
 # Add include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${CMAKE_SOURCE_DIR}/ImNodeFlow-master/include)
+include_directories(${CMAKE_SOURCE_DIR}/ImNodeFlow-master/src)
 
 # Collect source files
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 
+# ImNodeFlow sources
+set(IMNODEFLOW_SOURCES
+    ${CMAKE_SOURCE_DIR}/ImNodeFlow-master/src/ImNodeFlow.cpp
+)
+
 # Create executable
-add_executable(${PROJECT_NAME} ${SOURCES})
+add_executable(${PROJECT_NAME} ${SOURCES} ${IMNODEFLOW_SOURCES})
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE
