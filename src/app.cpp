@@ -3,6 +3,7 @@
 #include "shader_graph.h"
 #include <iostream>
 #include <cstring>
+#include <fstream>
 
 #ifdef __APPLE__
 #define GL_SILENCE_DEPRECATION
@@ -186,6 +187,11 @@ void App::initImGui() {
     
     // Set ini file path for saving window layout
     io.IniFilename = "imgui.ini";
+    
+    // Check if imgui.ini exists - if not, we'll reset layout on first frame
+    std::ifstream iniFile("imgui.ini");
+    m_resetLayout = !iniFile.good();
+    iniFile.close();
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -497,7 +503,31 @@ void App::render() {
     ImGui::NewFrame();
 
     // Enable dockspace
-    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
+    ImGuiID dockspace_id = ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
+    
+    // Reset layout on first frame if no imgui.ini was found
+    if (m_resetLayout) {
+        m_resetLayout = false;
+        
+        ImGui::DockBuilderRemoveNode(dockspace_id);
+        ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(dockspace_id, ImGui::GetMainViewport()->Size);
+        
+        // Split the dockspace: left for preview, right for shader editor and node graph
+        ImGuiID dock_left, dock_right;
+        ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Left, 0.3f, &dock_left, &dock_right);
+        
+        // Split the right side: top for shader editor, bottom for node graph
+        ImGuiID dock_right_top, dock_right_bottom;
+        ImGui::DockBuilderSplitNode(dock_right, ImGuiDir_Up, 0.5f, &dock_right_top, &dock_right_bottom);
+        
+        // Dock windows
+        ImGui::DockBuilderDockWindow("Shader Preview", dock_left);
+        ImGui::DockBuilderDockWindow("Generated Shader (Read-Only)", dock_right_top);
+        ImGui::DockBuilderDockWindow("Node Graph", dock_right_bottom);
+        
+        ImGui::DockBuilderFinish(dockspace_id);
+    }
 
     // Render ImGui windows
     renderPreviewWindow();

@@ -66,6 +66,9 @@ private:
     std::unique_ptr<ShaderGraph::ShaderGraphEditor> m_shaderGraph;
     bool m_autoCompile = true;
     std::string m_lastGeneratedCode;
+    
+    // Layout reset flag (when no imgui.ini exists)
+    bool m_resetLayout = false;
 };
 
 #endif // APP_H
