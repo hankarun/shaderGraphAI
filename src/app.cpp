@@ -1,5 +1,6 @@
 #include "app.h"
 #include "mat.h"
+#include "shader_graph.h"
 #include <iostream>
 #include <cstring>
 
@@ -134,14 +135,13 @@ void App::init(int width, int height, const std::string& name) {
     initImGui();
     initCubeRenderer();
     initFramebuffer(m_fbWidth, m_fbHeight);
+    initShaderGraph();
     
-    // Initialize shader source buffers
+    // Initialize shader sources
     m_vertexShaderSource = defaultVertexShader;
-    m_fragmentShaderSource = defaultFragmentShader;
-    strncpy(m_vertexShaderBuffer, m_vertexShaderSource.c_str(), sizeof(m_vertexShaderBuffer) - 1);
-    strncpy(m_fragmentShaderBuffer, m_fragmentShaderSource.c_str(), sizeof(m_fragmentShaderBuffer) - 1);
     
-    compileShaders();
+    // Generate initial fragment shader from graph
+    updateShaderFromGraph();
     
     std::cout << "App initialized" << std::endl;
 }
@@ -252,7 +252,7 @@ void App::compileShaders() {
     
     // Compile vertex shader
     unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    const char* vertSrc = m_vertexShaderBuffer;
+    const char* vertSrc = m_vertexShaderSource.c_str();
     glShaderSource(vertexShader, 1, &vertSrc, NULL);
     glCompileShader(vertexShader);
     
@@ -269,7 +269,7 @@ void App::compileShaders() {
     
     // Compile fragment shader
     unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    const char* fragSrc = m_fragmentShaderBuffer;
+    const char* fragSrc = m_fragmentShaderSource.c_str();
     glShaderSource(fragmentShader, 1, &fragSrc, NULL);
     glCompileShader(fragmentShader);
     
@@ -298,6 +298,23 @@ void App::compileShaders() {
     
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
+}
+
+void App::initShaderGraph() {
+    m_shaderGraph = std::make_unique<ShaderGraph::ShaderGraphEditor>();
+}
+
+void App::updateShaderFromGraph() {
+    if (!m_shaderGraph) return;
+    
+    std::string newCode = m_shaderGraph->generateFragmentShader();
+    
+    // Only recompile if code changed
+    if (newCode != m_lastGeneratedCode) {
+        m_lastGeneratedCode = newCode;
+        m_fragmentShaderSource = newCode;
+        compileShaders();
+    }
 }
 
 void App::shutdown() {
@@ -393,45 +410,74 @@ void App::renderPreviewWindow() {
 }
 
 void App::renderShaderEditorWindow() {
-    ImGui::Begin("Shader Editor");
+    ImGui::Begin("Generated Shader (Read-Only)");
     
-    // Tabs for vertex and fragment shaders
+    // Display compilation status at the top
+    if (m_shaderCompileError) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+        ImGui::TextWrapped("Compilation Error: %s", m_shaderErrorLog.c_str());
+        ImGui::PopStyleColor();
+        ImGui::Separator();
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 1.0f, 0.3f, 1.0f));
+        ImGui::Text("Shader compiled successfully!");
+        ImGui::PopStyleColor();
+        ImGui::Separator();
+    }
+    
+    // Auto-compile toggle
+    ImGui::Checkbox("Auto-compile on graph change", &m_autoCompile);
+    ImGui::SameLine();
+    if (ImGui::Button("Compile Now")) {
+        updateShaderFromGraph();
+    }
+    
+    ImGui::Separator();
+    
+    // Tabs for vertex and fragment shaders (read-only)
     if (ImGui::BeginTabBar("ShaderTabs")) {
-        if (ImGui::BeginTabItem("Vertex Shader")) {
-            ImGui::InputTextMultiline("##vertexshader", m_vertexShaderBuffer, 
-                sizeof(m_vertexShaderBuffer), ImVec2(-1, -60));
+        if (ImGui::BeginTabItem("Fragment Shader")) {
+            // Read-only text display
+            ImGui::BeginChild("FragmentShaderCode", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+            ImGui::TextUnformatted(m_fragmentShaderSource.c_str());
+            ImGui::PopStyleColor();
+            ImGui::EndChild();
             ImGui::EndTabItem();
         }
         
-        if (ImGui::BeginTabItem("Fragment Shader")) {
-            ImGui::InputTextMultiline("##fragmentshader", m_fragmentShaderBuffer, 
-                sizeof(m_fragmentShaderBuffer), ImVec2(-1, -60));
+        if (ImGui::BeginTabItem("Vertex Shader")) {
+            // Read-only text display
+            ImGui::BeginChild("VertexShaderCode", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+            ImGui::TextUnformatted(m_vertexShaderSource.c_str());
+            ImGui::PopStyleColor();
+            ImGui::EndChild();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
     }
     
-    // Compile button
-    if (ImGui::Button("Compile Shaders")) {
-        compileShaders();
-    }
+    ImGui::End();
+}
+
+void App::renderNodeGraphWindow() {
+    ImGui::Begin("Node Graph");
     
-    ImGui::SameLine();
-    if (ImGui::Button("Reset to Default")) {
-        strncpy(m_vertexShaderBuffer, defaultVertexShader, sizeof(m_vertexShaderBuffer) - 1);
-        strncpy(m_fragmentShaderBuffer, defaultFragmentShader, sizeof(m_fragmentShaderBuffer) - 1);
-        compileShaders();
-    }
+    ImGui::Text("Right-click to add nodes. Connect outputs to inputs.");
+    ImGui::Separator();
     
-    // Show compilation status
-    if (m_shaderCompileError) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
-        ImGui::TextWrapped("%s", m_shaderErrorLog.c_str());
-        ImGui::PopStyleColor();
-    } else {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 1.0f, 0.3f, 1.0f));
-        ImGui::Text("Shaders compiled successfully!");
-        ImGui::PopStyleColor();
+    // Get available size for the node graph
+    ImVec2 availSize = ImGui::GetContentRegionAvail();
+    
+    if (m_shaderGraph) {
+        m_shaderGraph->setSize(availSize);
+        m_shaderGraph->update();
+        
+        // Auto-compile when graph changes
+        if (m_autoCompile) {
+            updateShaderFromGraph();
+        }
     }
     
     ImGui::End();
@@ -455,6 +501,7 @@ void App::render() {
 
     // Render ImGui windows
     renderPreviewWindow();
+    renderNodeGraphWindow();
     renderShaderEditorWindow();
     
     // Stats window
@@ -465,6 +512,11 @@ void App::render() {
     ImGui::Separator();
     ImGui::Text("Time: %.2f", m_time);
     ImGui::Text("Rotation: %.2f", m_rotationAngle);
+    ImGui::Separator();
+    ImGui::TextWrapped("Instructions:");
+    ImGui::BulletText("Right-click in Node Graph to add nodes");
+    ImGui::BulletText("Drag from output to input pins to connect");
+    ImGui::BulletText("The shader code is auto-generated");
     ImGui::End();
 
     // Rendering

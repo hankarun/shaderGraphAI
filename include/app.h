@@ -2,8 +2,13 @@
 #define APP_H
 
 #include <string>
+#include <memory>
 
 struct GLFWwindow;
+
+namespace ShaderGraph {
+    class ShaderGraphEditor;
+}
 
 class App {
 public:
@@ -18,12 +23,15 @@ private:
     void initImGui();
     void initCubeRenderer();
     void initFramebuffer(int width, int height);
+    void initShaderGraph();
     void compileShaders();
     void shutdown();
     void render();
     void renderCubeToTexture();
     void renderPreviewWindow();
     void renderShaderEditorWindow();
+    void renderNodeGraphWindow();
+    void updateShaderFromGraph();
 
     GLFWwindow* m_window = nullptr;
     int m_windowWidth = 1280;
@@ -42,11 +50,9 @@ private:
     unsigned int m_cubeVBO = 0;
     unsigned int m_shaderProgram = 0;
     
-    // Shader source code (editable)
+    // Shader source code (generated from graph - read only in editor)
     std::string m_vertexShaderSource;
     std::string m_fragmentShaderSource;
-    char m_vertexShaderBuffer[8192];
-    char m_fragmentShaderBuffer[8192];
     
     // Shader compilation status
     bool m_shaderCompileError = false;
@@ -55,6 +61,11 @@ private:
     // Animation
     float m_rotationAngle = 0.0f;
     float m_time = 0.0f;
+    
+    // Node Graph Editor
+    std::unique_ptr<ShaderGraph::ShaderGraphEditor> m_shaderGraph;
+    bool m_autoCompile = true;
+    std::string m_lastGeneratedCode;
 };
 
 #endif // APP_H
