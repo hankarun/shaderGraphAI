@@ -5,6 +5,10 @@
 #include <string>
 #include <sstream>
 #include <iomanip>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+#include <algorithm>
 
 namespace ShaderGraph {
 
@@ -63,10 +67,69 @@ struct ShaderCode {
     ShaderCode(const std::string& c, const std::string& d) : code(c), declaration(d) {}
 };
 
+// Data type enumeration for shader variables
+enum class ShaderDataType {
+    Float,
+    Vec2,
+    Vec3,
+    Vec4
+};
+
+// Structure to hold generated variable info
+struct GeneratedVar {
+    std::string varName;
+    std::string expression;
+    ShaderDataType type;
+    bool isGenerated = false;
+};
+
+// Base class for shader nodes with code generation support
+class ShaderNodeBase : public ImFlow::BaseNode {
+public:
+    virtual ~ShaderNodeBase() = default;
+    
+    // Get the unique ID for this node (used for variable naming)
+    ImFlow::NodeUID getNodeUID() const { return getUID(); }
+    
+    // Check if this is an input/constant node (no inputs)
+    virtual bool isSourceNode() const { return false; }
+    
+    // Get the GLSL type string for a data type
+    static std::string typeToGLSL(ShaderDataType type) {
+        switch (type) {
+            case ShaderDataType::Float: return "float";
+            case ShaderDataType::Vec2: return "vec2";
+            case ShaderDataType::Vec3: return "vec3";
+            case ShaderDataType::Vec4: return "vec4";
+        }
+        return "float";
+    }
+    
+    // Generate unique variable name for this node's output
+    std::string getOutputVarName(const std::string& pinName = "") const {
+        std::string baseName = "node_" + std::to_string(getUID());
+        if (!pinName.empty()) {
+            baseName += "_" + pinName;
+        }
+        return baseName;
+    }
+    
+    // Get the output data type for a specific pin
+    virtual ShaderDataType getOutputType(const std::string& pinName) const {
+        return ShaderDataType::Float;
+    }
+    
+    // Generate the expression for an output pin (used during traversal)
+    virtual std::string generateExpression(const std::string& pinName,
+                                           const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const {
+        return "0.0";
+    }
+};
+
 // ============================================================================
 // FLOAT CONSTANT NODE - Outputs a constant float value
 // ============================================================================
-class FloatNode : public ImFlow::BaseNode {
+class FloatNode : public ShaderNodeBase {
 public:
     FloatNode() {
         setTitle("Float");
@@ -82,6 +145,18 @@ public:
         ImGui::SetNextItemWidth(80.f);
         ImGui::DragFloat("##value", &m_value, 0.01f, -100.0f, 100.0f, "%.3f");
     }
+    
+    bool isSourceNode() const override { return true; }
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Float; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(3) << m_value;
+        return ss.str();
+    }
+    
+    float getValue() const { return m_value; }
 
 private:
     float m_value = 0.0f;
@@ -90,7 +165,7 @@ private:
 // ============================================================================
 // VEC3 COLOR NODE - Outputs a vec3 color value
 // ============================================================================
-class ColorNode : public ImFlow::BaseNode {
+class ColorNode : public ShaderNodeBase {
 public:
     ColorNode() {
         setTitle("Color");
@@ -107,6 +182,17 @@ public:
         ImGui::SetNextItemWidth(150.f);
         ImGui::ColorEdit3("##color", m_color, ImGuiColorEditFlags_NoInputs);
     }
+    
+    bool isSourceNode() const override { return true; }
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Vec3; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(3);
+        ss << "vec3(" << m_color[0] << ", " << m_color[1] << ", " << m_color[2] << ")";
+        return ss.str();
+    }
 
 private:
     float m_color[3] = {1.0f, 0.5f, 0.2f};
@@ -115,7 +201,7 @@ private:
 // ============================================================================
 // TIME NODE - Outputs the time uniform
 // ============================================================================
-class TimeNode : public ImFlow::BaseNode {
+class TimeNode : public ShaderNodeBase {
 public:
     TimeNode() {
         setTitle("Time");
@@ -128,12 +214,20 @@ public:
     void draw() override {
         ImGui::Text("Uniform: time");
     }
+    
+    bool isSourceNode() const override { return true; }
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Float; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        return "time";
+    }
 };
 
 // ============================================================================
 // UV NODE - Outputs UV coordinates (FragPos based)
 // ============================================================================
-class UVNode : public ImFlow::BaseNode {
+class UVNode : public ShaderNodeBase {
 public:
     UVNode() {
         setTitle("Position");
@@ -155,12 +249,28 @@ public:
     void draw() override {
         ImGui::Text("Fragment Pos");
     }
+    
+    bool isSourceNode() const override { return true; }
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override {
+        if (pinName == "XYZ") return ShaderDataType::Vec3;
+        return ShaderDataType::Float;
+    }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        if (pinName == "XYZ") return "FragPos";
+        if (pinName == "X") return "FragPos.x";
+        if (pinName == "Y") return "FragPos.y";
+        if (pinName == "Z") return "FragPos.z";
+        return "FragPos";
+    }
 };
 
 // ============================================================================
 // NORMAL NODE - Outputs the normal vector
 // ============================================================================
-class NormalNode : public ImFlow::BaseNode {
+class NormalNode : public ShaderNodeBase {
 public:
     NormalNode() {
         setTitle("Normal");
@@ -173,12 +283,47 @@ public:
     void draw() override {
         ImGui::Text("Surface Normal");
     }
+    
+    bool isSourceNode() const override { return true; }
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Vec3; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        return "normalize(Normal)";
+    }
 };
+
+// Helper function to get input variable from the varMap or default
+inline std::string getInputVar(const ImFlow::BaseNode* node, const std::string& pinName,
+                               const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap,
+                               const std::string& defaultVal) {
+    // Need to cast away const since ImNodeFlow doesn't have const methods
+    auto* mutableNode = const_cast<ImFlow::BaseNode*>(node);
+    auto* pin = mutableNode->inPin(pinName);
+    if (pin && pin->isConnected()) {
+        auto linkWeak = pin->getLink();
+        if (auto link = linkWeak.lock()) {
+            auto* leftPin = link->left();
+            if (leftPin && leftPin->getParent()) {
+                ImFlow::NodeUID srcNodeId = leftPin->getParent()->getUID();
+                std::string srcPinName = leftPin->getName();
+                auto nodeIt = varMap.find(srcNodeId);
+                if (nodeIt != varMap.end()) {
+                    auto pinIt = nodeIt->second.find(srcPinName);
+                    if (pinIt != nodeIt->second.end()) {
+                        return pinIt->second;
+                    }
+                }
+            }
+        }
+    }
+    return defaultVal;
+}
 
 // ============================================================================
 // ADD NODE - Adds two values
 // ============================================================================
-class AddNode : public ImFlow::BaseNode {
+class AddNode : public ShaderNodeBase {
 public:
     AddNode() {
         setTitle("Add");
@@ -195,18 +340,27 @@ public:
     void draw() override {
         ImGui::Text("A + B");
     }
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Float; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::string a = getInputVar(this, "A", varMap, "0.0");
+        std::string b = getInputVar(this, "B", varMap, "0.0");
+        return "(" + a + " + " + b + ")";
+    }
 };
 
 // ============================================================================
-// MULTIPLY NODE - Multiplies two values
+// MULTIPLY NODE - Multiplies two values (supports float * float, vec3 * vec3, float * vec3)
 // ============================================================================
-class MultiplyNode : public ImFlow::BaseNode {
+class MultiplyNode : public ShaderNodeBase {
 public:
     MultiplyNode() {
         setTitle("Multiply");
         setStyle(MathNodeStyle());
-        addIN<ShaderCode>("A", ShaderCode("1.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
-        addIN<ShaderCode>("B", ShaderCode("1.0"), ImFlow::ConnectionFilter::SameType(), FloatPinStyle());
+        addIN<ShaderCode>("A", ShaderCode("1.0"), ImFlow::ConnectionFilter::None(), FloatPinStyle());
+        addIN<ShaderCode>("B", ShaderCode("1.0"), ImFlow::ConnectionFilter::None(), FloatPinStyle());
         addOUT<ShaderCode>("Result", FloatPinStyle())->behaviour([this]() {
             auto a = getInVal<ShaderCode>("A");
             auto b = getInVal<ShaderCode>("B");
@@ -217,12 +371,59 @@ public:
     void draw() override {
         ImGui::Text("A * B");
     }
+    
+    // Determine output type based on input connections
+    ShaderDataType getOutputType(const std::string& pinName) const override {
+        // Check if either input is connected to a vec3
+        auto* mutableThis = const_cast<MultiplyNode*>(this);
+        auto* pinA = mutableThis->inPin("A");
+        auto* pinB = mutableThis->inPin("B");
+        
+        bool aIsVec3 = false, bIsVec3 = false;
+        
+        if (pinA && pinA->isConnected()) {
+            auto linkWeak = pinA->getLink();
+            if (auto link = linkWeak.lock()) {
+                auto* leftPin = link->left();
+                if (leftPin && leftPin->getParent()) {
+                    ShaderNodeBase* srcNode = dynamic_cast<ShaderNodeBase*>(leftPin->getParent());
+                    if (srcNode && srcNode->getOutputType(leftPin->getName()) == ShaderDataType::Vec3) {
+                        aIsVec3 = true;
+                    }
+                }
+            }
+        }
+        
+        if (pinB && pinB->isConnected()) {
+            auto linkWeak = pinB->getLink();
+            if (auto link = linkWeak.lock()) {
+                auto* leftPin = link->left();
+                if (leftPin && leftPin->getParent()) {
+                    ShaderNodeBase* srcNode = dynamic_cast<ShaderNodeBase*>(leftPin->getParent());
+                    if (srcNode && srcNode->getOutputType(leftPin->getName()) == ShaderDataType::Vec3) {
+                        bIsVec3 = true;
+                    }
+                }
+            }
+        }
+        
+        // If either input is vec3, output is vec3
+        if (aIsVec3 || bIsVec3) return ShaderDataType::Vec3;
+        return ShaderDataType::Float;
+    }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::string a = getInputVar(this, "A", varMap, "1.0");
+        std::string b = getInputVar(this, "B", varMap, "1.0");
+        return "(" + a + " * " + b + ")";
+    }
 };
 
 // ============================================================================
 // SUBTRACT NODE - Subtracts two values
 // ============================================================================
-class SubtractNode : public ImFlow::BaseNode {
+class SubtractNode : public ShaderNodeBase {
 public:
     SubtractNode() {
         setTitle("Subtract");
@@ -239,12 +440,21 @@ public:
     void draw() override {
         ImGui::Text("A - B");
     }
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Float; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::string a = getInputVar(this, "A", varMap, "0.0");
+        std::string b = getInputVar(this, "B", varMap, "0.0");
+        return "(" + a + " - " + b + ")";
+    }
 };
 
 // ============================================================================
 // DIVIDE NODE - Divides two values
 // ============================================================================
-class DivideNode : public ImFlow::BaseNode {
+class DivideNode : public ShaderNodeBase {
 public:
     DivideNode() {
         setTitle("Divide");
@@ -261,12 +471,21 @@ public:
     void draw() override {
         ImGui::Text("A / B");
     }
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Float; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::string a = getInputVar(this, "A", varMap, "1.0");
+        std::string b = getInputVar(this, "B", varMap, "1.0");
+        return "(" + a + " / " + b + ")";
+    }
 };
 
 // ============================================================================
 // SIN NODE - Sine function
 // ============================================================================
-class SinNode : public ImFlow::BaseNode {
+class SinNode : public ShaderNodeBase {
 public:
     SinNode() {
         setTitle("Sin");
@@ -281,12 +500,20 @@ public:
     void draw() override {
         ImGui::Text("sin(X)");
     }
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Float; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::string x = getInputVar(this, "X", varMap, "0.0");
+        return "sin(" + x + ")";
+    }
 };
 
 // ============================================================================
 // COS NODE - Cosine function
 // ============================================================================
-class CosNode : public ImFlow::BaseNode {
+class CosNode : public ShaderNodeBase {
 public:
     CosNode() {
         setTitle("Cos");
@@ -301,12 +528,20 @@ public:
     void draw() override {
         ImGui::Text("cos(X)");
     }
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Float; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::string x = getInputVar(this, "X", varMap, "0.0");
+        return "cos(" + x + ")";
+    }
 };
 
 // ============================================================================
 // ABS NODE - Absolute value
 // ============================================================================
-class AbsNode : public ImFlow::BaseNode {
+class AbsNode : public ShaderNodeBase {
 public:
     AbsNode() {
         setTitle("Abs");
@@ -321,12 +556,20 @@ public:
     void draw() override {
         ImGui::Text("abs(X)");
     }
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Float; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::string x = getInputVar(this, "X", varMap, "0.0");
+        return "abs(" + x + ")";
+    }
 };
 
 // ============================================================================
 // MIX NODE - Linear interpolation
 // ============================================================================
-class MixNode : public ImFlow::BaseNode {
+class MixNode : public ShaderNodeBase {
 public:
     MixNode() {
         setTitle("Mix");
@@ -345,12 +588,22 @@ public:
     void draw() override {
         ImGui::Text("mix(A, B, T)");
     }
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Float; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::string a = getInputVar(this, "A", varMap, "0.0");
+        std::string b = getInputVar(this, "B", varMap, "1.0");
+        std::string t = getInputVar(this, "T", varMap, "0.5");
+        return "mix(" + a + ", " + b + ", " + t + ")";
+    }
 };
 
 // ============================================================================
 // CLAMP NODE - Clamp value
 // ============================================================================
-class ClampNode : public ImFlow::BaseNode {
+class ClampNode : public ShaderNodeBase {
 public:
     ClampNode() {
         setTitle("Clamp");
@@ -371,6 +624,17 @@ public:
         ImGui::SetNextItemWidth(60.f);
         ImGui::DragFloat("Max", &m_max, 0.01f);
     }
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Float; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::string x = getInputVar(this, "X", varMap, "0.0");
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(3);
+        ss << "clamp(" << x << ", " << m_min << ", " << m_max << ")";
+        return ss.str();
+    }
 
 private:
     float m_min = 0.0f;
@@ -380,7 +644,7 @@ private:
 // ============================================================================
 // MAKE VEC3 NODE - Creates a vec3 from components
 // ============================================================================
-class MakeVec3Node : public ImFlow::BaseNode {
+class MakeVec3Node : public ShaderNodeBase {
 public:
     MakeVec3Node() {
         setTitle("Make Vec3");
@@ -399,12 +663,22 @@ public:
     void draw() override {
         ImGui::Text("vec3(X,Y,Z)");
     }
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Vec3; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::string x = getInputVar(this, "X", varMap, "0.0");
+        std::string y = getInputVar(this, "Y", varMap, "0.0");
+        std::string z = getInputVar(this, "Z", varMap, "0.0");
+        return "vec3(" + x + ", " + y + ", " + z + ")";
+    }
 };
 
 // ============================================================================
 // SPLIT VEC3 NODE - Splits a vec3 into components
 // ============================================================================
-class SplitVec3Node : public ImFlow::BaseNode {
+class SplitVec3Node : public ShaderNodeBase {
 public:
     SplitVec3Node() {
         setTitle("Split Vec3");
@@ -427,12 +701,23 @@ public:
     void draw() override {
         ImGui::Text("Split XYZ");
     }
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Float; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::string v = getInputVar(this, "Vec3", varMap, "vec3(0.0)");
+        if (pinName == "X") return "(" + v + ").x";
+        if (pinName == "Y") return "(" + v + ").y";
+        if (pinName == "Z") return "(" + v + ").z";
+        return "(" + v + ").x";
+    }
 };
 
 // ============================================================================
 // FRESNEL NODE - Fresnel effect
 // ============================================================================
-class FresnelNode : public ImFlow::BaseNode {
+class FresnelNode : public ShaderNodeBase {
 public:
     FresnelNode() {
         setTitle("Fresnel");
@@ -447,12 +732,20 @@ public:
     void draw() override {
         ImGui::Text("Fresnel Effect");
     }
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Float; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::string power = getInputVar(this, "Power", varMap, "2.0");
+        return "pow(1.0 - max(dot(normalize(Normal), normalize(viewPos - FragPos)), 0.0), " + power + ")";
+    }
 };
 
 // ============================================================================
 // OUTPUT NODE - Final shader output (always needed)
 // ============================================================================
-class OutputNode : public ImFlow::BaseNode {
+class OutputNode : public ShaderNodeBase {
 public:
     OutputNode() {
         setTitle("Shader Output");
@@ -465,11 +758,21 @@ public:
         ImGui::Text("Final Output");
     }
     
+    // Legacy method - still works for simple graphs
     std::string generateCode() {
         auto color = getInVal<ShaderCode>("Color");
         auto alpha = getInVal<ShaderCode>("Alpha");
         return "    vec3 finalColor = " + color.code + ";\n"
                "    float finalAlpha = " + alpha.code + ";\n"
+               "    FragColor = vec4(finalColor, finalAlpha);\n";
+    }
+    
+    // New method using variable map from graph traversal
+    std::string generateCodeFromVarMap(const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const {
+        std::string color = getInputVar(this, "Color", varMap, "vec3(1.0, 0.5, 0.2)");
+        std::string alpha = getInputVar(this, "Alpha", varMap, "1.0");
+        return "    vec3 finalColor = " + color + ";\n"
+               "    float finalAlpha = " + alpha + ";\n"
                "    FragColor = vec4(finalColor, finalAlpha);\n";
     }
 };
