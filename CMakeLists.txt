@@ -25,6 +25,19 @@ set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(glfw)
 
+# Fetch GLEW (for Windows OpenGL extension loading)
+if(WIN32)
+    FetchContent_Declare(
+        glew
+        GIT_REPOSITORY https://github.com/Perlmint/glew-cmake.git
+        GIT_TAG glew-cmake-2.2.0
+    )
+    set(glew-cmake_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    set(glew-cmake_BUILD_STATIC ON CACHE BOOL "" FORCE)
+    set(ONLY_LIBS ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(glew)
+endif()
+
 # Fetch ImGui
 FetchContent_Declare(
     imgui
@@ -76,6 +89,7 @@ add_executable(${PROJECT_NAME} ${SOURCES} ${IMNODEFLOW_SOURCES})
 target_link_libraries(${PROJECT_NAME} PRIVATE
     imgui
     OpenGL::GL
+    $<$<PLATFORM_ID:Windows>:libglew_static>
 )
 
 # Optional: Add compiler warnings

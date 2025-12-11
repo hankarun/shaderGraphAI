@@ -8,6 +8,8 @@
 #ifdef __APPLE__
 #define GL_SILENCE_DEPRECATION
 #include <OpenGL/gl3.h>
+#elif defined(_WIN32)
+#include <GL/glew.h>
 #endif
 
 #include <GLFW/glfw3.h>
@@ -175,6 +177,21 @@ void App::initWindow() {
 
     glfwMakeContextCurrent(m_window);
     glfwSwapInterval(1); // Enable vsync
+
+#ifdef _WIN32
+    // Initialize GLEW for Windows OpenGL extension loading
+    glewExperimental = GL_TRUE;
+    GLenum glewErr = glewInit();
+    if (glewErr != GLEW_OK) {
+        std::cerr << "Failed to initialize GLEW: " << glewGetErrorString(glewErr) << std::endl;
+        glfwDestroyWindow(m_window);
+        glfwTerminate();
+        m_window = nullptr;
+        return;
+    }
+    std::cout << "GLEW initialized successfully" << std::endl;
+    std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
+#endif
 }
 
 void App::initImGui() {
