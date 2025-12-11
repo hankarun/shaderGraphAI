@@ -15,6 +15,51 @@ namespace ShaderGraph {
 // Forward declarations
 class ShaderNode;
 
+// Data type enumeration for shader variables
+enum class ShaderDataType {
+    Float,
+    Vec2,
+    Vec3,
+    Vec4
+};
+
+// Structure to hold uniform parameter info for CPU-controlled values
+struct UniformParameter {
+    std::string name;           // Uniform name in shader
+    std::string displayName;    // User-friendly display name
+    ShaderDataType type = ShaderDataType::Float;
+    float floatValue = 0.0f;    // For float uniforms
+    float vec3Value[3] = {0.0f, 0.0f, 0.0f};  // For vec3 uniforms
+    float minValue = 0.0f;      // Range for UI
+    float maxValue = 1.0f;
+    
+    UniformParameter() = default;
+    
+    // Float parameter constructor
+    static UniformParameter Float(const std::string& n, const std::string& display, float val, float minV = 0.0f, float maxV = 1.0f) {
+        UniformParameter p;
+        p.name = n;
+        p.displayName = display;
+        p.type = ShaderDataType::Float;
+        p.floatValue = val;
+        p.minValue = minV;
+        p.maxValue = maxV;
+        return p;
+    }
+    
+    // Vec3 parameter constructor
+    static UniformParameter Vec3(const std::string& n, const std::string& display, float r, float g, float b) {
+        UniformParameter p;
+        p.name = n;
+        p.displayName = display;
+        p.type = ShaderDataType::Vec3;
+        p.vec3Value[0] = r;
+        p.vec3Value[1] = g;
+        p.vec3Value[2] = b;
+        return p;
+    }
+};
+
 // Custom node styles with proper padding
 inline std::shared_ptr<ImFlow::NodeStyle> InputNodeStyle() {
     auto style = std::make_shared<ImFlow::NodeStyle>(IM_COL32(90,191,93,255), ImColor(233,241,244,255), 6.5f);
@@ -67,14 +112,6 @@ struct ShaderCode {
     ShaderCode(const std::string& c, const std::string& d) : code(c), declaration(d) {}
 };
 
-// Data type enumeration for shader variables
-enum class ShaderDataType {
-    Float,
-    Vec2,
-    Vec3,
-    Vec4
-};
-
 // Structure to hold generated variable info
 struct GeneratedVar {
     std::string varName;
@@ -113,6 +150,15 @@ public:
         }
         return baseName;
     }
+    
+    // Check if this node is a parameter node (generates uniforms)
+    virtual bool isParameterNode() const { return false; }
+    
+    // Get the uniform parameter info (for parameter nodes)
+    virtual UniformParameter getUniformParameter() const { return UniformParameter(); }
+    
+    // Set the uniform parameter value (for parameter nodes)
+    virtual void setUniformValue(const UniformParameter& param) {}
     
     // Get the output data type for a specific pin
     virtual ShaderDataType getOutputType(const std::string& pinName) const {
@@ -196,6 +242,152 @@ public:
 
 private:
     float m_color[3] = {1.0f, 0.5f, 0.2f};
+};
+
+// ============================================================================
+// FLOAT PARAMETER NODE - A float uniform controlled from CPU
+// ============================================================================
+class FloatParameterNode : public ShaderNodeBase {
+public:
+    FloatParameterNode() {
+        setTitle("Float Param");
+        setStyle(InputNodeStyle());
+        addOUT<ShaderCode>("Value", FloatPinStyle())->behaviour([this]() {
+            return ShaderCode(getUniformName());
+        });
+        // Generate unique uniform name based on node UID
+        m_uniformName = "u_float_" + std::to_string(getUID());
+    }
+
+    void draw() override {
+        ImGui::SetNextItemWidth(100.f);
+        ImGui::InputText("##name", m_displayName, sizeof(m_displayName));
+        ImGui::SetNextItemWidth(80.f);
+        ImGui::DragFloat("##value", &m_value, 0.01f, m_min, m_max, "%.3f");
+        ImGui::SetNextItemWidth(60.f);
+        ImGui::DragFloat("Min", &m_min, 0.1f, -100.0f, m_max - 0.1f);
+        ImGui::SetNextItemWidth(60.f);
+        ImGui::DragFloat("Max", &m_max, 0.1f, m_min + 0.1f, 100.0f);
+    }
+    
+    bool isSourceNode() const override { return true; }
+    bool isParameterNode() const override { return true; }
+    ShaderDataType getOutputType(const std::string& pinName) const override { return ShaderDataType::Float; }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        return getUniformName();
+    }
+    
+    std::string getUniformName() const {
+        // Create a clean uniform name from display name or use default
+        std::string name = m_displayName;
+        if (name.empty()) name = "param";
+        // Replace spaces with underscores and remove special chars
+        std::string clean = "u_";
+        for (char c : name) {
+            if (std::isalnum(c)) clean += c;
+            else if (c == ' ') clean += '_';
+        }
+        clean += "_" + std::to_string(getUID());
+        return clean;
+    }
+    
+    UniformParameter getUniformParameter() const override {
+        return UniformParameter::Float(getUniformName(), m_displayName[0] ? m_displayName : "Float Parameter", 
+                               m_value, m_min, m_max);
+    }
+    
+    void setUniformValue(const UniformParameter& param) override {
+        m_value = param.floatValue;
+    }
+    
+    float getValue() const { return m_value; }
+    void setValue(float v) { m_value = v; }
+
+private:
+    char m_displayName[64] = "MyFloat";
+    std::string m_uniformName;
+    float m_value = 0.5f;
+    float m_min = 0.0f;
+    float m_max = 1.0f;
+};
+
+// ============================================================================
+// VEC3 PARAMETER NODE - A vec3 uniform controlled from CPU (great for colors)
+// ============================================================================
+class Vec3ParameterNode : public ShaderNodeBase {
+public:
+    Vec3ParameterNode() {
+        setTitle("Vec3 Param");
+        setStyle(InputNodeStyle());
+        addOUT<ShaderCode>("RGB", Vec3PinStyle())->behaviour([this]() {
+            return ShaderCode(getUniformName());
+        });
+        addOUT<ShaderCode>("R", FloatPinStyle())->behaviour([this]() {
+            return ShaderCode(getUniformName() + ".r");
+        });
+        addOUT<ShaderCode>("G", FloatPinStyle())->behaviour([this]() {
+            return ShaderCode(getUniformName() + ".g");
+        });
+        addOUT<ShaderCode>("B", FloatPinStyle())->behaviour([this]() {
+            return ShaderCode(getUniformName() + ".b");
+        });
+    }
+
+    void draw() override {
+        ImGui::SetNextItemWidth(100.f);
+        ImGui::InputText("##name", m_displayName, sizeof(m_displayName));
+        ImGui::SetNextItemWidth(150.f);
+        ImGui::ColorEdit3("##color", m_value, ImGuiColorEditFlags_NoInputs);
+    }
+    
+    bool isSourceNode() const override { return true; }
+    bool isParameterNode() const override { return true; }
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override {
+        if (pinName == "RGB") return ShaderDataType::Vec3;
+        return ShaderDataType::Float;
+    }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        if (pinName == "RGB") return getUniformName();
+        if (pinName == "R") return getUniformName() + ".r";
+        if (pinName == "G") return getUniformName() + ".g";
+        if (pinName == "B") return getUniformName() + ".b";
+        return getUniformName();
+    }
+    
+    std::string getUniformName() const {
+        std::string name = m_displayName;
+        if (name.empty()) name = "color";
+        std::string clean = "u_";
+        for (char c : name) {
+            if (std::isalnum(c)) clean += c;
+            else if (c == ' ') clean += '_';
+        }
+        clean += "_" + std::to_string(getUID());
+        return clean;
+    }
+    
+    UniformParameter getUniformParameter() const override {
+        return UniformParameter::Vec3(getUniformName(), m_displayName[0] ? m_displayName : "Vec3 Parameter", 
+                              m_value[0], m_value[1], m_value[2]);
+    }
+    
+    void setUniformValue(const UniformParameter& param) override {
+        m_value[0] = param.vec3Value[0];
+        m_value[1] = param.vec3Value[1];
+        m_value[2] = param.vec3Value[2];
+    }
+    
+    const float* getValue() const { return m_value; }
+    void setValue(float r, float g, float b) { m_value[0] = r; m_value[1] = g; m_value[2] = b; }
+
+private:
+    char m_displayName[64] = "MyColor";
+    float m_value[3] = {1.0f, 0.5f, 0.2f};
 };
 
 // ============================================================================

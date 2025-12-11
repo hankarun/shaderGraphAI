@@ -136,10 +136,29 @@ public:
     
     void update() {
         m_nodeFlow.update();
+        // Collect parameters from graph
+        collectParameters();
     }
     
     void setSize(const ImVec2& size) {
         m_nodeFlow.setSize(size);
+    }
+    
+    // Get all parameters in the graph
+    const std::vector<UniformParameter>& getParameters() const { return m_parameters; }
+    
+    // Update parameter value in a node
+    void setParameterValue(const std::string& uniformName, const UniformParameter& param) {
+        for (auto& nodePair : m_nodeFlow.getNodes()) {
+            ShaderNodeBase* shaderNode = dynamic_cast<ShaderNodeBase*>(nodePair.second.get());
+            if (shaderNode && shaderNode->isParameterNode()) {
+                UniformParameter nodeParam = shaderNode->getUniformParameter();
+                if (nodeParam.name == uniformName) {
+                    shaderNode->setUniformValue(param);
+                    break;
+                }
+            }
+        }
     }
     
     // Generate fragment shader code using graph traversal
@@ -153,12 +172,22 @@ out vec4 FragColor;
 in vec3 FragPos;
 in vec3 Normal;
 
+// Built-in uniforms
 uniform float time;
 uniform vec3 lightPos;
 uniform vec3 viewPos;
 uniform vec3 lightColor;
 uniform vec3 objectColor;
 
+)";
+        
+        // Generate user parameter uniforms
+        for (const auto& param : m_parameters) {
+            ss << "// User parameter: " << param.displayName << "\n";
+            ss << "uniform " << ShaderNodeBase::typeToGLSL(param.type) << " " << param.name << ";\n";
+        }
+        
+        ss << R"(
 void main()
 {
 )";
@@ -271,6 +300,16 @@ private:
             ImGui::EndMenu();
         }
         
+        if (ImGui::BeginMenu("Parameters")) {
+            if (ImGui::MenuItem("Float Parameter")) {
+                m_nodeFlow.placeNode<FloatParameterNode>();
+            }
+            if (ImGui::MenuItem("Vec3 Parameter (Color)")) {
+                m_nodeFlow.placeNode<Vec3ParameterNode>();
+            }
+            ImGui::EndMenu();
+        }
+        
         if (ImGui::BeginMenu("Input")) {
             if (ImGui::MenuItem("Time")) {
                 m_nodeFlow.placeNode<TimeNode>();
@@ -333,6 +372,18 @@ private:
     
     ImFlow::ImNodeFlow m_nodeFlow;
     std::shared_ptr<OutputNode> m_outputNode;
+    std::vector<UniformParameter> m_parameters;  // Collected user parameters
+    
+    // Collect all parameter nodes from the graph
+    void collectParameters() {
+        m_parameters.clear();
+        for (auto& nodePair : m_nodeFlow.getNodes()) {
+            ShaderNodeBase* shaderNode = dynamic_cast<ShaderNodeBase*>(nodePair.second.get());
+            if (shaderNode && shaderNode->isParameterNode()) {
+                m_parameters.push_back(shaderNode->getUniformParameter());
+            }
+        }
+    }
 };
 
 } // namespace ShaderGraph

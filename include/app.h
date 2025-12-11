@@ -3,11 +3,14 @@
 
 #include <string>
 #include <memory>
+#include <vector>
+#include <unordered_map>
 
 struct GLFWwindow;
 
 namespace ShaderGraph {
     class ShaderGraphEditor;
+    struct UniformParameter;
 }
 
 class App {
@@ -31,7 +34,9 @@ private:
     void renderPreviewWindow();
     void renderShaderEditorWindow();
     void renderNodeGraphWindow();
+    void renderParametersWindow();
     void updateShaderFromGraph();
+    void setShaderUniforms();
 
     GLFWwindow* m_window = nullptr;
     int m_windowWidth = 1280;

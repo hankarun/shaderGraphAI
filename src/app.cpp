@@ -390,7 +390,7 @@ void App::renderCubeToTexture() {
         // Projection matrix
         mat::perspective(projection, 45.0f * 3.14159f / 180.0f, (float)m_fbWidth / (float)m_fbHeight, 0.1f, 100.0f);
         
-        // Set uniforms
+        // Set built-in uniforms
         glUniformMatrix4fv(glGetUniformLocation(m_shaderProgram, "model"), 1, GL_FALSE, model);
         glUniformMatrix4fv(glGetUniformLocation(m_shaderProgram, "view"), 1, GL_FALSE, view);
         glUniformMatrix4fv(glGetUniformLocation(m_shaderProgram, "projection"), 1, GL_FALSE, projection);
@@ -400,6 +400,9 @@ void App::renderCubeToTexture() {
         glUniform3f(glGetUniformLocation(m_shaderProgram, "lightColor"), 1.0f, 1.0f, 1.0f);
         glUniform3f(glGetUniformLocation(m_shaderProgram, "objectColor"), 0.3f, 0.6f, 0.9f);
         
+        // Set user parameter uniforms
+        setShaderUniforms();
+        
         // Draw the cube
         glBindVertexArray(m_cubeVAO);
         glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -408,6 +411,22 @@ void App::renderCubeToTexture() {
     
     glDisable(GL_DEPTH_TEST);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void App::setShaderUniforms() {
+    if (!m_shaderGraph || !m_shaderProgram) return;
+    
+    const auto& params = m_shaderGraph->getParameters();
+    for (const auto& param : params) {
+        int loc = glGetUniformLocation(m_shaderProgram, param.name.c_str());
+        if (loc != -1) {
+            if (param.type == ShaderGraph::ShaderDataType::Float) {
+                glUniform1f(loc, param.floatValue);
+            } else if (param.type == ShaderGraph::ShaderDataType::Vec3) {
+                glUniform3f(loc, param.vec3Value[0], param.vec3Value[1], param.vec3Value[2]);
+            }
+        }
+    }
 }
 
 void App::renderPreviewWindow() {
@@ -506,6 +525,59 @@ void App::renderNodeGraphWindow() {
     ImGui::End();
 }
 
+void App::renderParametersWindow() {
+    ImGui::Begin("Shader Parameters");
+    
+    if (!m_shaderGraph) {
+        ImGui::Text("No shader graph loaded");
+        ImGui::End();
+        return;
+    }
+    
+    const auto& params = m_shaderGraph->getParameters();
+    
+    if (params.empty()) {
+        ImGui::TextWrapped("No parameters defined. Add Float Parameter or Vec3 Parameter nodes to the graph to create CPU-controllable uniforms.");
+    } else {
+        ImGui::Text("Adjust shader parameters in real-time:");
+        ImGui::Separator();
+        
+        for (const auto& param : params) {
+            ImGui::PushID(param.name.c_str());
+            
+            if (param.type == ShaderGraph::ShaderDataType::Float) {
+                float value = param.floatValue;
+                ImGui::Text("%s", param.displayName.c_str());
+                ImGui::SetNextItemWidth(200.f);
+                if (ImGui::SliderFloat("##value", &value, param.minValue, param.maxValue, "%.3f")) {
+                    ShaderGraph::UniformParameter updatedParam = param;
+                    updatedParam.floatValue = value;
+                    m_shaderGraph->setParameterValue(param.name, updatedParam);
+                }
+            } else if (param.type == ShaderGraph::ShaderDataType::Vec3) {
+                float color[3] = { param.vec3Value[0], param.vec3Value[1], param.vec3Value[2] };
+                ImGui::Text("%s", param.displayName.c_str());
+                ImGui::SetNextItemWidth(200.f);
+                if (ImGui::ColorEdit3("##color", color)) {
+                    ShaderGraph::UniformParameter updatedParam = param;
+                    updatedParam.vec3Value[0] = color[0];
+                    updatedParam.vec3Value[1] = color[1];
+                    updatedParam.vec3Value[2] = color[2];
+                    m_shaderGraph->setParameterValue(param.name, updatedParam);
+                }
+            }
+            
+            // Show uniform name for reference
+            ImGui::TextDisabled("uniform: %s", param.name.c_str());
+            ImGui::Separator();
+            
+            ImGui::PopID();
+        }
+    }
+    
+    ImGui::End();
+}
+
 void App::render() {
     // Update animation
     m_time = (float)glfwGetTime();
@@ -530,16 +602,21 @@ void App::render() {
         ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
         ImGui::DockBuilderSetNodeSize(dockspace_id, ImGui::GetMainViewport()->Size);
         
-        // Split the dockspace: left for preview, right for shader editor and node graph
+        // Split the dockspace: left for preview + parameters, right for shader editor and node graph
         ImGuiID dock_left, dock_right;
         ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Left, 0.3f, &dock_left, &dock_right);
+        
+        // Split left side: top for preview, bottom for parameters
+        ImGuiID dock_left_top, dock_left_bottom;
+        ImGui::DockBuilderSplitNode(dock_left, ImGuiDir_Up, 0.6f, &dock_left_top, &dock_left_bottom);
         
         // Split the right side: top for shader editor, bottom for node graph
         ImGuiID dock_right_top, dock_right_bottom;
         ImGui::DockBuilderSplitNode(dock_right, ImGuiDir_Up, 0.5f, &dock_right_top, &dock_right_bottom);
         
         // Dock windows
-        ImGui::DockBuilderDockWindow("Shader Preview", dock_left);
+        ImGui::DockBuilderDockWindow("Shader Preview", dock_left_top);
+        ImGui::DockBuilderDockWindow("Shader Parameters", dock_left_bottom);
         ImGui::DockBuilderDockWindow("Generated Shader (Read-Only)", dock_right_top);
         ImGui::DockBuilderDockWindow("Node Graph", dock_right_bottom);
         
@@ -548,6 +625,7 @@ void App::render() {
 
     // Render ImGui windows
     renderPreviewWindow();
+    renderParametersWindow();
     renderNodeGraphWindow();
     renderShaderEditorWindow();
     
