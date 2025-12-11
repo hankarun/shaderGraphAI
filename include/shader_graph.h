@@ -171,6 +171,7 @@ out vec4 FragColor;
 
 in vec3 FragPos;
 in vec3 Normal;
+in vec2 TexCoord;
 
 // Built-in uniforms
 uniform float time;
@@ -320,8 +321,18 @@ private:
             if (ImGui::MenuItem("Normal")) {
                 m_nodeFlow.placeNode<NormalNode>();
             }
+            if (ImGui::MenuItem("Tex Coord (UV)")) {
+                m_nodeFlow.placeNode<TexCoordNode>();
+            }
             if (ImGui::MenuItem("Fresnel")) {
                 m_nodeFlow.placeNode<FresnelNode>();
+            }
+            ImGui::EndMenu();
+        }
+        
+        if (ImGui::BeginMenu("Texture")) {
+            if (ImGui::MenuItem("Texture Sampler")) {
+                m_nodeFlow.placeNode<TextureNode>();
             }
             ImGui::EndMenu();
         }

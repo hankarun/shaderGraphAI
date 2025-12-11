@@ -20,7 +20,8 @@ enum class ShaderDataType {
     Float,
     Vec2,
     Vec3,
-    Vec4
+    Vec4,
+    Sampler2D
 };
 
 // Structure to hold uniform parameter info for CPU-controlled values
@@ -58,6 +59,18 @@ struct UniformParameter {
         p.vec3Value[2] = b;
         return p;
     }
+    
+    // Sampler2D parameter constructor (for texture nodes)
+    static UniformParameter Sampler2D(const std::string& n, const std::string& display, int texUnit = 0) {
+        UniformParameter p;
+        p.name = n;
+        p.displayName = display;
+        p.type = ShaderDataType::Sampler2D;
+        p.textureUnit = texUnit;
+        return p;
+    }
+    
+    int textureUnit = 0;        // Texture unit for sampler2D uniforms
 };
 
 // Custom node styles with proper padding
@@ -138,6 +151,7 @@ public:
             case ShaderDataType::Vec2: return "vec2";
             case ShaderDataType::Vec3: return "vec3";
             case ShaderDataType::Vec4: return "vec4";
+            case ShaderDataType::Sampler2D: return "sampler2D";
         }
         return "float";
     }
@@ -482,6 +496,45 @@ public:
     std::string generateExpression(const std::string& pinName,
                                    const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
         return "normalize(Normal)";
+    }
+};
+
+// ============================================================================
+// TEX COORD NODE - Outputs UV texture coordinates
+// ============================================================================
+class TexCoordNode : public ShaderNodeBase {
+public:
+    TexCoordNode() {
+        setTitle("Tex Coord");
+        setStyle(InputNodeStyle());
+        addOUT<ShaderCode>("UV", Vec2PinStyle())->behaviour([this]() {
+            return ShaderCode("TexCoord");
+        });
+        addOUT<ShaderCode>("U", FloatPinStyle())->behaviour([this]() {
+            return ShaderCode("TexCoord.x");
+        });
+        addOUT<ShaderCode>("V", FloatPinStyle())->behaviour([this]() {
+            return ShaderCode("TexCoord.y");
+        });
+    }
+
+    void draw() override {
+        ImGui::Text("Texture Coords");
+    }
+    
+    bool isSourceNode() const override { return true; }
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override {
+        if (pinName == "UV") return ShaderDataType::Vec2;
+        return ShaderDataType::Float;
+    }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        if (pinName == "UV") return "TexCoord";
+        if (pinName == "U") return "TexCoord.x";
+        if (pinName == "V") return "TexCoord.y";
+        return "TexCoord";
     }
 };
 
@@ -932,6 +985,108 @@ public:
         std::string power = getInputVar(this, "Power", varMap, "2.0");
         return "pow(1.0 - max(dot(normalize(Normal), normalize(viewPos - FragPos)), 0.0), " + power + ")";
     }
+};
+
+// ============================================================================
+// TEXTURE NODE - Samples a 2D texture with sampler
+// ============================================================================
+class TextureNode : public ShaderNodeBase {
+public:
+    TextureNode() {
+        setTitle("Texture");
+        setStyle(InputNodeStyle());
+        
+        // UV input for texture coordinates
+        addIN<ShaderCode>("UV", ShaderCode("FragPos.xy"), ImFlow::ConnectionFilter::SameType(), Vec2PinStyle());
+        
+        // Output pins for sampled color
+        addOUT<ShaderCode>("RGBA", Vec4PinStyle())->behaviour([this]() {
+            auto uv = getInVal<ShaderCode>("UV");
+            return ShaderCode("texture(" + getSamplerName() + ", " + uv.code + ")");
+        });
+        addOUT<ShaderCode>("RGB", Vec3PinStyle())->behaviour([this]() {
+            auto uv = getInVal<ShaderCode>("UV");
+            return ShaderCode("texture(" + getSamplerName() + ", " + uv.code + ").rgb");
+        });
+        addOUT<ShaderCode>("R", FloatPinStyle())->behaviour([this]() {
+            auto uv = getInVal<ShaderCode>("UV");
+            return ShaderCode("texture(" + getSamplerName() + ", " + uv.code + ").r");
+        });
+        addOUT<ShaderCode>("G", FloatPinStyle())->behaviour([this]() {
+            auto uv = getInVal<ShaderCode>("UV");
+            return ShaderCode("texture(" + getSamplerName() + ", " + uv.code + ").g");
+        });
+        addOUT<ShaderCode>("B", FloatPinStyle())->behaviour([this]() {
+            auto uv = getInVal<ShaderCode>("UV");
+            return ShaderCode("texture(" + getSamplerName() + ", " + uv.code + ").b");
+        });
+        addOUT<ShaderCode>("A", FloatPinStyle())->behaviour([this]() {
+            auto uv = getInVal<ShaderCode>("UV");
+            return ShaderCode("texture(" + getSamplerName() + ", " + uv.code + ").a");
+        });
+    }
+
+    void draw() override {
+        ImGui::SetNextItemWidth(100.f);
+        ImGui::InputText("##name", m_displayName, sizeof(m_displayName));
+        ImGui::Text("Unit: %d", m_textureUnit);
+        ImGui::SetNextItemWidth(60.f);
+        if (ImGui::DragInt("##unit", &m_textureUnit, 1.0f, 0, 15)) {
+            m_textureUnit = std::max(0, std::min(15, m_textureUnit));
+        }
+    }
+    
+    bool isSourceNode() const override { return false; }  // Has UV input
+    bool isParameterNode() const override { return true; }  // Generates uniform
+    
+    ShaderDataType getOutputType(const std::string& pinName) const override {
+        if (pinName == "RGBA") return ShaderDataType::Vec4;
+        if (pinName == "RGB") return ShaderDataType::Vec3;
+        return ShaderDataType::Float;
+    }
+    
+    std::string generateExpression(const std::string& pinName,
+                                   const std::unordered_map<ImFlow::NodeUID, std::unordered_map<std::string, std::string>>& varMap) const override {
+        std::string uv = getInputVar(this, "UV", varMap, "FragPos.xy");
+        std::string sampleExpr = "texture(" + getSamplerName() + ", " + uv + ")";
+        
+        if (pinName == "RGBA") return sampleExpr;
+        if (pinName == "RGB") return sampleExpr + ".rgb";
+        if (pinName == "R") return sampleExpr + ".r";
+        if (pinName == "G") return sampleExpr + ".g";
+        if (pinName == "B") return sampleExpr + ".b";
+        if (pinName == "A") return sampleExpr + ".a";
+        return sampleExpr;
+    }
+    
+    std::string getSamplerName() const {
+        std::string name = m_displayName;
+        if (name.empty()) name = "texture";
+        std::string clean = "u_";
+        for (char c : name) {
+            if (std::isalnum(c)) clean += c;
+            else if (c == ' ') clean += '_';
+        }
+        clean += "_" + std::to_string(getUID());
+        return clean;
+    }
+    
+    UniformParameter getUniformParameter() const override {
+        return UniformParameter::Sampler2D(getSamplerName(), 
+                                           m_displayName[0] ? m_displayName : "Texture", 
+                                           m_textureUnit);
+    }
+    
+    void setUniformValue(const UniformParameter& param) override {
+        m_textureUnit = param.textureUnit;
+    }
+    
+    int getTextureUnit() const { return m_textureUnit; }
+    void setTextureUnit(int unit) { m_textureUnit = std::max(0, std::min(15, unit)); }
+
+private:
+    char m_displayName[64] = "MyTexture";
+    int m_textureUnit = 0;
 };
 
 // ============================================================================
